@@ -9,7 +9,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 import javax.jms.JMSException;
 import javax.jms.Message;
@@ -27,9 +26,9 @@ import org.apache.spark.streaming.receiver.Receiver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import scala.collection.mutable.ArrayBuffer;
-
 import com.google.common.base.Stopwatch;
+
+import scala.collection.mutable.ArrayBuffer;
 
 /**
  * Synchronous Reliable Receiver to use for a Jms provider that does not support an individual acknowledgment mode. Supports all Spark Streaming properties such
@@ -47,7 +46,6 @@ public class SynchronousJmsReceiver<T> extends Receiver<T> {
 	final MessageConverterFunction<T> messageConverter;
 	final long blockIntervalMillis;
 
-	transient volatile boolean running = false;
 	transient volatile BlockGenerator blockGenerator = null;
 
 	private transient volatile Optional<ExecutorService> receiverThread = Optional.empty();
@@ -95,7 +93,6 @@ public class SynchronousJmsReceiver<T> extends Receiver<T> {
 	@Override
 	public void onStart() {
 		log.info("Called receiver onStart() with blockInterval={}", blockIntervalMillis);
-		running = true;
 		receiverThread = Optional.of(Executors.newSingleThreadExecutor());
 		// We are just using the blockGenerator for access to rate limiter
 		this.blockGenerator = supervisor().createBlockGenerator(new GeneratedBlockHandler());
@@ -106,13 +103,6 @@ public class SynchronousJmsReceiver<T> extends Receiver<T> {
 	@Override
 	public void onStop() {
 		log.info("Called receiver onStop()");
-		running = false;
-		try {
-			consumerFactory.stopConnection();
-			log.info("Successfully stopped connection");
-		} catch (JMSException e) {
-			log.warn(e.getLocalizedMessage(), e);
-		}
 
 		if (receiverThread.isPresent()) {
 			receiverThread.get().shutdown();
@@ -155,19 +145,19 @@ public class SynchronousJmsReceiver<T> extends Receiver<T> {
 			try {
 				MessageConsumer consumer = consumerFactory.newConsumer(Session.CLIENT_ACKNOWLEDGE);
 
-				while (running) {
-					long elapsedBatchMillis = stopWatch.elapsed(TimeUnit.MILLISECONDS);
+				while (!isStopped()) {
+					long elapsedBatchMillis = stopWatch.elapsedTime(TimeUnit.MILLISECONDS);
 
 					if (elapsedBatchMillis >= blockIntervalMillis) {
 						log.info("Calling storeBuffer() with {} messages after {}", buffer.size(), elapsedBatchMillis);
 						storeBuffer();
-						elapsedBatchMillis = stopWatch.elapsed(TimeUnit.MILLISECONDS); // get elapsed time of new batch
+						elapsedBatchMillis = stopWatch.elapsedTime(TimeUnit.MILLISECONDS); // get elapsed time of new batch
 					}
 
 					long receiveTimeout = blockIntervalMillis - elapsedBatchMillis;
 					log.trace("Receiving message with timeout {}", receiveTimeout);
 					Message message = receiveTimeout > 0 ? consumer.receive(receiveTimeout) : consumer.receiveNoWait();
-					if (message != null && running) {
+					if (message != null) {
 						blockGenerator.waitToPush(); // Use rate limiter
 						log.trace("Adding message to buffer");
 						buffer.add(message);
@@ -177,6 +167,13 @@ public class SynchronousJmsReceiver<T> extends Receiver<T> {
 			} catch (Exception e) {
 				log.error(e.getLocalizedMessage(), e);
 				restart(e.getLocalizedMessage(), e);
+			} finally {
+				try {
+					consumerFactory.stopConnection();
+					log.info("Successfully stopped connection");
+				} catch (JMSException e) {
+					log.warn(e.getLocalizedMessage(), e);
+				}
 			}
 			log.info("Finished run() in receiver thread");
 		}
@@ -185,7 +182,7 @@ public class SynchronousJmsReceiver<T> extends Receiver<T> {
 			if (!buffer.isEmpty()) {
 				Iterator<T> msgs = buffer.stream() //
 						.map(messageConverter) // convert Message to T
-						.flatMap(o -> o.map(Stream::of).orElseGet(Stream::empty)) // filter out absent Optionals
+						.filter(Optional::isPresent).map(Optional::get) // filter out absent Optionals
 						.iterator();
 				store(msgs);
 

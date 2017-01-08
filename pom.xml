@@ -19,7 +19,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
 		<!-- hadoop versions -->
-		<cdh.spark.version>1.5.0-cdh5.5.0</cdh.spark.version>
+		<cdh.spark.version>1.6.0-cdh5.9.0</cdh.spark.version>
 
 		<!-- jms versions -->
 		<jms.version>1.1</jms.version>
@@ -33,7 +33,7 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
-			<version>14.0</version>
+			<version>11.0.2</version>
 		</dependency>
 
 		<!-- Logging -->

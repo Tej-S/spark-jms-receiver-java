@@ -105,7 +105,6 @@ public class SynchronousJmsReceiverTest {
 				List<String> msgs = rdd.collect();
 				log.info("received rdd with {} partitions and {} messages", rdd.partitions().size(), msgs.size());
 				results.addAll(msgs);
-				return null;
 			});
 
 			jssc.start();
@@ -137,7 +136,7 @@ public class SynchronousJmsReceiverTest {
 			TextMessage textMsg = session.createTextMessage();
 			textMsg.setText("message " + i);
 			messageProducer.send(textMsg);
-			long sleepTime = millisPerMessage - stopWatch.elapsed(TimeUnit.MILLISECONDS);
+			long sleepTime = millisPerMessage - stopWatch.elapsedTime(TimeUnit.MILLISECONDS);
 			if (sleepTime > 0) {
 				Thread.sleep(sleepTime);
 			}
